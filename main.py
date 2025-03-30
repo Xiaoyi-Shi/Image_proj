@@ -1,7 +1,8 @@
 import os
 import subprocess
 import shutil
-os.chdir('/mnt/h/sjw/sMRI_eeg/codes')
+import pandas as pd
+os.chdir('/mnt/f/BaiduSyncdisk/My_projects/My_github/Image_proj')
 import n_tools as nt
 # 获取所有环境变量
 #env_vars = os.environ
@@ -25,13 +26,14 @@ subprocess.run('surfreg --s {} --t {} --lh --xhemi --no-annot'.format(
     os.path.basename(temp_sub), 
     os.path.basename(sym_sub)), shell=True)
 
-# 
-surf_dir = os.path.join(main_dir, 'surf')
+# 读取患者列表并批量将mask_vol2surf
+patients_list = pd.read_csv('patients_list.csv')
+patient_dir = os.path.join(SUBJECTS_DIR, 'test')
+mask_in_mni = os.path.join(patient_dir, 'mask_warped.nii.gz')
+surf_dir = os.path.join(patient_dir, 'surf')
 if not os.path.exists(surf_dir):
     os.makedirs(surf_dir)
     print(f"创建目录: {surf_dir}")
-
-mask_in_mni = os.path.join(SUBJECTS_DIR, 'mask_warped.nii.gz')
 
 subprocess.run('mri_vol2surf --mov {} --regheader {} --hemi {} --out {} --interp nearest'.format(
     mask_in_mni, 
