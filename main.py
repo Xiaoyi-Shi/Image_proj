@@ -30,13 +30,31 @@ subprocess.run('surfreg --s {} --t {} --lh --xhemi --no-annot'.format(
 patients_list = pd.read_csv('patients_list.csv')
 patient_dir = os.path.join(SUBJECTS_DIR, 'test')
 mask_in_mni = os.path.join(patient_dir, 'mask_warped.nii.gz')
+lateral = nt.determine_mask_side(mask_in_mni)
 surf_dir = os.path.join(patient_dir, 'surf')
 if not os.path.exists(surf_dir):
     os.makedirs(surf_dir)
     print(f"创建目录: {surf_dir}")
+mask_in_surf = os.path.join(patient_dir, 'surf/mask_in_surf_'+lateral+'.mgh')
 
 subprocess.run('mri_vol2surf --mov {} --regheader {} --hemi {} --out {} --interp nearest'.format(
     mask_in_mni, 
-    temp_sub, 
+    os.path.basename(temp_sub), 
     lateral, 
-    mask_in_mni2surf), shell=True)
+    mask_in_surf), shell=True)
+
+# 进行对称化并将mask_in_surf转换为fsaverage_sym的lh
+if lateral == 'lh':
+    subprocess.run('mris_apply_reg --src {} --trg {} --streg {} {}'.format(
+        mask_in_surf,
+        os.path.join(patient_dir, 'surf/mask_in_symsurf_lolh.mgh'),
+        os.path.join(temp_sub, 'surf/lh.sphere.reg'),
+        os.path.join(sym_sub, 'surf/lh.sphere.reg')
+    ), shell=True)
+if lateral == 'rh':
+    subprocess.run('mris_apply_reg --src {} --trg {} --streg {} {}'.format(
+        mask_in_surf,
+        os.path.join(patient_dir, 'surf/mask_in_symsurf_rolh.mgh'),
+        os.path.join(temp_sub, 'xhemi/surf/lh.fsaverage_sym.sphere.reg'),
+        os.path.join(sym_sub, 'surf/lh.sphere.reg')
+    ), shell=True)
