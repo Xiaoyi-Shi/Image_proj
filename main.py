@@ -45,16 +45,62 @@ subprocess.run('mri_vol2surf --mov {} --regheader {} --hemi {} --out {} --interp
 
 # 进行对称化并将mask_in_surf转换为fsaverage_sym的lh
 if lateral == 'lh':
+    mask_in_symsurf_lh = os.path.join(patient_dir, 'surf/mask_in_symsurf_lolh.mgh')
     subprocess.run('mris_apply_reg --src {} --trg {} --streg {} {}'.format(
         mask_in_surf,
-        os.path.join(patient_dir, 'surf/mask_in_symsurf_lolh.mgh'),
+        mask_in_symsurf_lh,
         os.path.join(temp_sub, 'surf/lh.sphere.reg'),
         os.path.join(sym_sub, 'surf/lh.sphere.reg')
     ), shell=True)
 if lateral == 'rh':
+    mask_in_symsurf_lh = os.path.join(patient_dir, 'surf/mask_in_symsurf_rolh.mgh')
     subprocess.run('mris_apply_reg --src {} --trg {} --streg {} {}'.format(
         mask_in_surf,
-        os.path.join(patient_dir, 'surf/mask_in_symsurf_rolh.mgh'),
+        mask_in_symsurf_lh,
         os.path.join(temp_sub, 'xhemi/surf/lh.fsaverage_sym.sphere.reg'),
         os.path.join(sym_sub, 'surf/lh.sphere.reg')
     ), shell=True)
+
+# surf文件转化为label
+label_in_symsurf_lh = os.path.join(patient_dir, 'surf/mask_in_symsurf_lrholh.label')
+subprocess.run('mri_cor2label --i {} --id {} --l {} --surf {} {} --remove-holes-islands'.format(
+    mask_in_symsurf_lh,
+    '1',
+    label_in_symsurf_lh,
+    os.path.basename(sym_sub),
+    'lh'), shell=True)
+
+# 批量提取所有患者label面积
+labels_table = []
+patients_list_valid = []
+for patient_name in patients_list:
+    label_file = os.path.join(SUBJECTS_DIR, patient_name, 'surf/mask_in_symsurf_lrholh.label')
+    if nt.is_valid_label(label_file):
+        patients_list_valid.append(patient_name)
+        labels_table.append(label_file)
+
+annot_path = os.path.join(sym_sub, 'label/lh.aparc.annot')
+white_surface_path = os.path.join(sym_sub, 'surf/lh.white')
+labels_area, annot_area, annot_names = nt.culc_lesion_area(labels_table,annot_path,white_surface_path) 
+annot_names = [name.decode('utf-8') for name in annot_names]
+del annot_names[4] # 删除第5个元素，aparc.annot的1004-ctx-lh-corpuscallosum没有在annot里
+
+labels_area_table = pd.DataFrame([annot_area] + labels_area)
+labels_area_table.columns = annot_names
+patients_list_valid = ['fsavrage_sym'] + patients_list_valid
+labels_area_table.insert(0, 'patients', patients_list_valid)
+labels_area_table.to_csv('labels_area_table.csv', index=False)
+##### test
+'''
+nt.is_valid_label(os.path.join(SUBJECTS_DIR, 'test', 'surf/mask_in_symsurf_lrholh.label'))
+len(labels_area[0])
+len(annot_area)
+len(annot_names)
+annot, ctab, names = fsio.read_annot(annot_path)
+len(np.unique(annot))
+len(annot)
+len(ctab)
+np.unique(annot)[5]
+names[5]
+
+'''
