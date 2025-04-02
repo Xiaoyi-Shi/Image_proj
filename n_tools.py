@@ -3,21 +3,77 @@ import numpy as np
 import pandas as pd
 import nibabel as nib
 import nibabel.freesurfer.io as fsio
-import matplotlib.pyplot as plt
+import subprocess
 
 def is_valid_label(file_path):
     """
     检查文件是否存在且为有效的 label 文件
     """
     if not os.path.exists(file_path):
+        print(f"文件不存在: {file_path}")
         return False
     try:
         fsio.read_label(file_path, read_scalars=False)
         return True
     except Exception as e:
+        print(f"文件格式错误: {file_path}")
         return False
-    
+
+
+def is_valid_vol(file_path):
+    """
+    检查文件是否存在且为有效的 label 文件
+    """
+    if not os.path.exists(file_path):
+        print(f"文件不存在: {file_path}")
+        return False
+    try:
+        nib.load(file_path)
+        return True
+    except Exception as e:
+        print(f"文件格式错误: {file_path}")
+        return False
+
+def convert_mask_to_cvs152(mask_list, cvs152_orig):
+    """
+    将mask转换为cvs152空间
+    ----------
+    - mask_list: list of str, mask文件路径列表
+    - cvs152_orig: str, cvs152原始空间文件路径
+    ----------
+    returns:
+    - success_list: list of str, 成功转换的mask文件路径列表
+    - failed_list: list of str, 转换失败的mask文件路径列表
+    """
+    success_list = []
+    failed_list = []
+    for mask in mask_list:
+        if is_valid_vol(mask):
+            output_mask = os.path.join(os.path.dirname(mask), 'mask_warped_cvs152.nii.gz')
+            try:
+                # 使用 mri_convert 将 mask 转换为 cvs152 空间
+                subprocess.run('mri_convert {} {} --like {} -rt nearest'.format(
+                    mask,
+                    output_mask,
+                    cvs152_orig), shell=True)
+                success_list.append(output_mask)
+            except Exception as e:
+                print(f"转换失败: {mask}, 错误: {e}")
+                failed_list.append(mask)
+        else:
+            print(f"无效的mask文件: {mask}")
+            failed_list.append(mask)
+    return success_list, failed_list
+
 def determine_mask_side(mask_path):
+    """
+    确定掩膜的侧别（左脑或右脑）
+    ----------
+    - mask_path: str, 掩膜文件路径
+    ----------
+    returns:
+    - str, 'lh' 或 'rh'，表示左脑或右脑
+    """
     # 加载 mask 文件
     img = nib.load(mask_path)
     data = img.get_fdata()  # 获取体视素数据
@@ -52,7 +108,18 @@ def compute_triangle_area(v1, v2, v3):
     return area
 
 def culc_lesion_area(mask_label_list, annot_file, white_surface_file):
-    
+    """
+    计算surf_overlay占annot的面积
+    ----------
+    - mask_label_list: list of str, 自定义label文件路径列表
+    - annot_file: str, annot文件路径
+    - white_surface_file: str, 白质表面文件路径
+    ----------
+    returns:
+    - fina_stats: list of dict, 每个字典包含一个患者的各个脑区面积
+    - region_areas: dict, 每个脑区的总面积
+    - region_map_name: dict, 脑区ID到名称的映射
+    """
     #读取白质文件
     vertices, faces = fsio.read_geometry(white_surface_file)
 
@@ -120,6 +187,14 @@ def culc_lesion_area(mask_label_list, annot_file, white_surface_file):
 def calc_maskin_aseg(mask_file_list, aseg_file, lookup_table_file):
     """
     计算mask在aseg中的体素数量
+    ----------
+    - mask_file_list: list of str, mask文件路径列表
+    - aseg_file: str, aseg文件路径
+    - lookup_table_file: str, 颜色查找表文件路径
+    ----------
+    returns:
+    - fina_stats: list of dict, 每个字典包含一个患者的各个脑区体素数量
+    - temp_aseg_vols: dict, 每个脑区的体素数量
     """
 
     # 加载aseg_file并获取所有唯一区域ID

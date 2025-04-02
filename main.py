@@ -80,10 +80,10 @@ labels_area_table = pd.DataFrame([annot_area] + labels_area)
 labels_area_table.to_csv('labels_area_table.csv', index=False)
 
 # 批量提取所有患者mask在皮质下的体积
-subprocess.run('mri_convert {} {} --like {} -rt nearest'.format(
-    os.path.join(SUBJECTS_DIR, 'test/mask_warped.nii.gz'),
-    os.path.join(SUBJECTS_DIR, 'test/mask_warped_converted.nii.gz'),
-    os.path.join(temp_sub, 'mri/aseg.mgz')), shell=True)
+# 将mask转换到cvs152空间
+mask_list = [os.path.join(SUBJECTS_DIR,i,'mask_warped.nii.gz') for i in patients_list]
+mask_cvs152_list, failed_list = nt.convert_mask_to_cvs152(mask_list, os.path.join(temp_sub, 'mri/aseg.mgz'))
+
 mask_list = [os.path.join(SUBJECTS_DIR,i,'mask_warped_converted.nii.gz') for i in patients_list]
 aseg_file = '/root/subjects/cvs_MNI152/mri/aparc+aseg.mgz'
 lookup_table_file = '/mnt/h/djh/nilearn_projects/fsaverage_sym/FreeSurferColorLUT.txt'
