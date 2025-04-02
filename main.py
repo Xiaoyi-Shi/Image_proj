@@ -27,7 +27,7 @@ subprocess.run('surfreg --s {} --t {} --lh --xhemi --no-annot'.format(
     os.path.basename(sym_sub)), shell=True)
 
 # 读取患者列表并批量将mask_vol2surf
-patients_list = pd.read_csv('patients_list.csv')
+patients_list = ['test','test']#pd.read_csv('patients_list.csv')
 patient_dir = os.path.join(SUBJECTS_DIR, 'test')
 mask_in_mni = os.path.join(patient_dir, 'mask_warped.nii.gz')
 lateral = nt.determine_mask_side(mask_in_mni)
@@ -71,25 +71,26 @@ subprocess.run('mri_cor2label --i {} --id {} --l {} --surf {} {} --remove-holes-
     'lh'), shell=True)
 
 # 批量提取所有患者label面积
-labels_table = []
-patients_list_valid = []
-for patient_name in patients_list:
-    label_file = os.path.join(SUBJECTS_DIR, patient_name, 'surf/mask_in_symsurf_lrholh.label')
-    if nt.is_valid_label(label_file):
-        patients_list_valid.append(patient_name)
-        labels_table.append(label_file)
-
+labels_list = [os.path.join(SUBJECTS_DIR,i,'surf/mask_in_symsurf_lrholh.label') for i in patients_list]
 annot_path = os.path.join(sym_sub, 'label/lh.aparc.annot')
 white_surface_path = os.path.join(sym_sub, 'surf/lh.white')
-labels_area, annot_area, annot_names = nt.culc_lesion_area(labels_table,annot_path,white_surface_path) 
-annot_names = [name.decode('utf-8') for name in annot_names]
-del annot_names[4] # 删除第5个元素，aparc.annot的1004-ctx-lh-corpuscallosum没有在annot里
 
+labels_area, annot_area, annot_names = nt.culc_lesion_area(labels_list,annot_path,white_surface_path) 
 labels_area_table = pd.DataFrame([annot_area] + labels_area)
-labels_area_table.columns = annot_names
-patients_list_valid = ['fsavrage_sym'] + patients_list_valid
-labels_area_table.insert(0, 'patients', patients_list_valid)
 labels_area_table.to_csv('labels_area_table.csv', index=False)
+
+# 批量提取所有患者mask在皮质下的体积
+subprocess.run('mri_convert {} {} --like {} -rt nearest'.format(
+    os.path.join(SUBJECTS_DIR, 'test/mask_warped.nii.gz'),
+    os.path.join(SUBJECTS_DIR, 'test/mask_warped_converted.nii.gz'),
+    os.path.join(temp_sub, 'mri/aseg.mgz')), shell=True)
+mask_list = [os.path.join(SUBJECTS_DIR,i,'mask_warped_converted.nii.gz') for i in patients_list]
+aseg_file = '/root/subjects/cvs_MNI152/mri/aparc+aseg.mgz'
+lookup_table_file = '/mnt/h/djh/nilearn_projects/fsaverage_sym/FreeSurferColorLUT.txt'
+
+mask_vols, aseg_vols = nt.calc_maskin_aseg(mask_list, aseg_file, lookup_table_file)
+mask_vols_table = pd.DataFrame([aseg_vols] + mask_vols)
+mask_vols_table.to_csv('mask_vols_table.csv', index=False)
 ##### test
 '''
 nt.is_valid_label(os.path.join(SUBJECTS_DIR, 'test', 'surf/mask_in_symsurf_lrholh.label'))
