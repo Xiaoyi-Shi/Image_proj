@@ -1,96 +1,36 @@
 import os
 import subprocess
-import shutil
+import go_path as paths
 import pandas as pd
 os.chdir('/mnt/f/BaiduSyncdisk/My_projects/My_github/Image_proj')
 import n_tools as nt
-# 获取所有环境变量
-#env_vars = os.environ
-# 设置环境变量
-FREESURFER_HOME = os.environ.get('FREESURFER_HOME')
-SUBJECTS_DIR = '/root/subjects'
-os.environ['SUBJECTS_DIR'] = SUBJECTS_DIR
-# 设置主要目录
-temp_sub = os.path.join(SUBJECTS_DIR, 'cvs_MNI152')
-sym_sub = os.path.join(SUBJECTS_DIR, 'fsaverage_sym')
-# 复制模板
-if not os.path.exists(temp_sub):
-    shutil.copytree(os.path.join(FREESURFER_HOME,'subjects/cvs_avg35_inMNI152'), temp_sub)
-if not os.path.exists(sym_sub):
-    shutil.copytree(os.path.join(FREESURFER_HOME,'subjects/fsaverage_sym'), sym_sub)
-# 制作对称模版
-subprocess.run('surfreg --s {} --t {} --lh --no-annot'.format(
-    os.path.basename(temp_sub), 
-    os.path.basename(sym_sub)), shell=True)
-subprocess.run('surfreg --s {} --t {} --lh --xhemi --no-annot'.format(
-    os.path.basename(temp_sub), 
-    os.path.basename(sym_sub)), shell=True)
+# 复制fsaverage_sym和cvs_avg35_inMNI152到指定目录
+nt.copy_temp_sub(paths.temp_sub, paths.sym_sub)
 
-# 读取患者列表并批量将mask_vol2surf
+# 读取患者列表
 patients_list = ['test','test']#pd.read_csv('patients_list.csv')
-patient_dir = os.path.join(SUBJECTS_DIR, 'test')
-mask_in_mni = os.path.join(patient_dir, 'mask_warped.nii.gz')
-lateral = nt.determine_mask_side(mask_in_mni)
-surf_dir = os.path.join(patient_dir, 'surf')
-if not os.path.exists(surf_dir):
-    os.makedirs(surf_dir)
-    print(f"创建目录: {surf_dir}")
-mask_in_surf = os.path.join(patient_dir, 'surf/mask_in_surf_'+lateral+'.mgh')
+mask_list = [os.path.join(paths.SUBJECTS_DIR,i,'mask_warped.nii.gz') for i in patients_list]
+# 批量提取所有患者mask在皮质下的体积
+# 将mask转换到cvs152空间
+mask_cvs152_list, failed_list = nt.convert_mask_to_cvs152(mask_list, os.path.join(paths.temp_sub, 'mri/aseg.mgz'))
+aseg_file = os.path.join(paths.temp_sub, 'mri/aseg.mgz')
+lookup_table_file = os.path.join(paths.FREESURFER_HOME, 'FreeSurferColorLUT.txt') #511及后几行有8列的的颜色表需要注释掉
 
-subprocess.run('mri_vol2surf --mov {} --regheader {} --hemi {} --out {} --interp nearest'.format(
-    mask_in_mni, 
-    os.path.basename(temp_sub), 
-    lateral, 
-    mask_in_surf), shell=True)
+mask_vols, aseg_vols = nt.calc_maskin_aseg(mask_cvs152_list, aseg_file, lookup_table_file)
+mask_vols_table = pd.DataFrame([aseg_vols] + mask_vols)
+mask_vols_table.to_csv('mask_vols_table.csv', index=False)
 
-# 进行对称化并将mask_in_surf转换为fsaverage_sym的lh
-if lateral == 'lh':
-    mask_in_symsurf_lh = os.path.join(patient_dir, 'surf/mask_in_symsurf_lolh.mgh')
-    subprocess.run('mris_apply_reg --src {} --trg {} --streg {} {}'.format(
-        mask_in_surf,
-        mask_in_symsurf_lh,
-        os.path.join(temp_sub, 'surf/lh.sphere.reg'),
-        os.path.join(sym_sub, 'surf/lh.sphere.reg')
-    ), shell=True)
-if lateral == 'rh':
-    mask_in_symsurf_lh = os.path.join(patient_dir, 'surf/mask_in_symsurf_rolh.mgh')
-    subprocess.run('mris_apply_reg --src {} --trg {} --streg {} {}'.format(
-        mask_in_surf,
-        mask_in_symsurf_lh,
-        os.path.join(temp_sub, 'xhemi/surf/lh.fsaverage_sym.sphere.reg'),
-        os.path.join(sym_sub, 'surf/lh.sphere.reg')
-    ), shell=True)
-
-# surf文件转化为label
-label_in_symsurf_lh = os.path.join(patient_dir, 'surf/mask_in_symsurf_lrholh.label')
-subprocess.run('mri_cor2label --i {} --id {} --l {} --surf {} {} --remove-holes-islands'.format(
-    mask_in_symsurf_lh,
-    '1',
-    label_in_symsurf_lh,
-    os.path.basename(sym_sub),
-    'lh'), shell=True)
+# 批量提取所有患者mask在皮质表面的体积并转换到fsaverage_sym的左脑表面
+surfs_lh, labels_lh = nt.mask_vol2surf(mask_cvs152_list)
 
 # 批量提取所有患者label面积
-labels_list = [os.path.join(SUBJECTS_DIR,i,'surf/mask_in_symsurf_lrholh.label') for i in patients_list]
-annot_path = os.path.join(sym_sub, 'label/lh.aparc.annot')
-white_surface_path = os.path.join(sym_sub, 'surf/lh.white')
+annot_path = os.path.join(paths.sym_sub, 'label/lh.aparc.annot')
+white_surface_path = os.path.join(paths.sym_sub, 'surf/lh.white')
 
-labels_area, annot_area, annot_names = nt.culc_lesion_area(labels_list,annot_path,white_surface_path) 
+labels_area, annot_area, annot_names = nt.culc_lesion_area(labels_lh,annot_path,white_surface_path) 
 labels_area_table = pd.DataFrame([annot_area] + labels_area)
 labels_area_table.to_csv('labels_area_table.csv', index=False)
 
-# 批量提取所有患者mask在皮质下的体积
-# 将mask转换到cvs152空间
-mask_list = [os.path.join(SUBJECTS_DIR,i,'mask_warped.nii.gz') for i in patients_list]
-mask_cvs152_list, failed_list = nt.convert_mask_to_cvs152(mask_list, os.path.join(temp_sub, 'mri/aseg.mgz'))
-
-mask_list = [os.path.join(SUBJECTS_DIR,i,'mask_warped_converted.nii.gz') for i in patients_list]
-aseg_file = '/root/subjects/cvs_MNI152/mri/aparc+aseg.mgz'
-lookup_table_file = '/mnt/h/djh/nilearn_projects/fsaverage_sym/FreeSurferColorLUT.txt'
-
-mask_vols, aseg_vols = nt.calc_maskin_aseg(mask_list, aseg_file, lookup_table_file)
-mask_vols_table = pd.DataFrame([aseg_vols] + mask_vols)
-mask_vols_table.to_csv('mask_vols_table.csv', index=False)
 ##### test
 '''
 nt.is_valid_label(os.path.join(SUBJECTS_DIR, 'test', 'surf/mask_in_symsurf_lrholh.label'))

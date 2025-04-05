@@ -1,9 +1,11 @@
 import os
 import numpy as np
 import pandas as pd
+import shutil
 import nibabel as nib
 import nibabel.freesurfer.io as fsio
 import subprocess
+import go_path as paths
 
 def is_valid_label(file_path):
     """
@@ -34,36 +36,26 @@ def is_valid_vol(file_path):
         print(f"文件格式错误: {file_path}")
         return False
 
-def convert_mask_to_cvs152(mask_list, cvs152_orig):
+def copy_temp_sub(temp_sub, sym_sub):
     """
-    将mask转换为cvs152空间
+    复制cvs_avg35_inMNI152和fsaverage_sym到指定目录temp_sub, sym_sub并进行对称化处理xhemi
     ----------
-    - mask_list: list of str, mask文件路径列表
-    - cvs152_orig: str, cvs152原始空间文件路径
+    - temp_sub: str, 目标目录路径
+    - sym_sub: str, 目标目录路径
     ----------
-    returns:
-    - success_list: list of str, 成功转换的mask文件路径列表
-    - failed_list: list of str, 转换失败的mask文件路径列表
     """
-    success_list = []
-    failed_list = []
-    for mask in mask_list:
-        if is_valid_vol(mask):
-            output_mask = os.path.join(os.path.dirname(mask), 'mask_warped_cvs152.nii.gz')
-            try:
-                # 使用 mri_convert 将 mask 转换为 cvs152 空间
-                subprocess.run('mri_convert {} {} --like {} -rt nearest'.format(
-                    mask,
-                    output_mask,
-                    cvs152_orig), shell=True)
-                success_list.append(output_mask)
-            except Exception as e:
-                print(f"转换失败: {mask}, 错误: {e}")
-                failed_list.append(mask)
-        else:
-            print(f"无效的mask文件: {mask}")
-            failed_list.append(mask)
-    return success_list, failed_list
+    if not os.path.exists(temp_sub):
+        shutil.copytree(os.path.join(paths.FREESURFER_HOME,'subjects/cvs_avg35_inMNI152'), temp_sub)
+    if not os.path.exists(sym_sub):
+        shutil.copytree(os.path.join(paths.FREESURFER_HOME,'subjects/fsaverage_sym'), sym_sub)
+    # 制作对称模版
+    subprocess.run('surfreg --s {} --t {} --lh --no-annot'.format(
+        os.path.basename(temp_sub), 
+        os.path.basename(sym_sub)), shell=True)
+    subprocess.run('surfreg --s {} --t {} --lh --xhemi --no-annot'.format(
+        os.path.basename(temp_sub), 
+        os.path.basename(sym_sub)), shell=True)
+
 
 def determine_mask_side(mask_path):
     """
@@ -98,6 +90,38 @@ def determine_mask_side(mask_path):
         return "lh"
     else:
         return "unknown"
+
+def convert_mask_to_cvs152(mask_list, cvs152_orig):
+    """
+    将mask转换为cvs152空间
+    ----------
+    - mask_list: list of str, mask文件路径列表
+    - cvs152_orig: str, cvs152原始空间文件路径
+    ----------
+    returns:
+    - success_list: list of str, 成功转换的mask文件路径列表
+    - failed_list: list of str, 转换失败的mask文件路径列表
+    """
+    success_list = []
+    failed_list = []
+    for mask in mask_list:
+        if is_valid_vol(mask):
+            output_mask = os.path.join(os.path.dirname(mask), 'mask_warped_cvs152.nii.gz')
+            try:
+                # 使用 mri_convert 将 mask 转换为 cvs152 空间
+                subprocess.run('mri_convert {} {} --like {} -rt nearest'.format(
+                    mask,
+                    output_mask,
+                    cvs152_orig), shell=True)
+                success_list.append(output_mask)
+            except Exception as e:
+                print(f"转换失败: {mask}, 错误: {e}")
+                failed_list.append(mask)
+        else:
+            print(f"无效的mask文件: {mask}")
+            failed_list.append(mask)
+    return success_list, failed_list
+
 
 def compute_triangle_area(v1, v2, v3):
     # 使用叉积计算三角形面积
@@ -240,3 +264,58 @@ def calc_maskin_aseg(mask_file_list, aseg_file, lookup_table_file):
         fina_stats.append(results)
 
     return fina_stats, temp_aseg_vols
+
+def mask_vol2surf(mask_list):
+    """
+    将mask转换为surf文件并进行对称化处理
+    ----------
+    - mask_list: list of str, mask文件路径列表
+    ----------
+    """
+    surfs_lh = []
+    labels_lh = []
+    for mask in mask_list:
+        patient_dir = os.path.dirname(mask)
+        lateral = determine_mask_side(mask)
+        surf_dir = os.path.join(patient_dir, 'surf')
+        if not os.path.exists(surf_dir):
+            os.makedirs(surf_dir)
+            print(f"创建目录: {surf_dir}")
+        mask_in_surf = os.path.join(patient_dir, 'surf/mask_in_surf_'+lateral+'.mgh')
+
+        subprocess.run('mri_vol2surf --mov {} --regheader {} --hemi {} --out {} --interp nearest'.format(
+            mask, 
+            os.path.basename(paths.temp_sub), 
+            lateral, 
+            mask_in_surf), shell=True)
+
+        # 进行对称化并将mask_in_surf转换为fsaverage_sym的lh
+        if lateral == 'lh':
+            mask_in_symsurf_lh = os.path.join(patient_dir, 'surf/mask_in_symsurf_lolh.mgh')
+            subprocess.run('mris_apply_reg --src {} --trg {} --streg {} {}'.format(
+                mask_in_surf,
+                mask_in_symsurf_lh,
+                os.path.join(paths.temp_sub, 'surf/lh.sphere.reg'),
+                os.path.join(paths.sym_sub, 'surf/lh.sphere.reg')
+            ), shell=True)
+        if lateral == 'rh':
+            mask_in_symsurf_lh = os.path.join(patient_dir, 'surf/mask_in_symsurf_rolh.mgh')
+            subprocess.run('mris_apply_reg --src {} --trg {} --streg {} {}'.format(
+                mask_in_surf,
+                mask_in_symsurf_lh,
+                os.path.join(paths.temp_sub, 'xhemi/surf/lh.fsaverage_sym.sphere.reg'),
+                os.path.join(paths.sym_sub, 'surf/lh.sphere.reg')
+            ), shell=True)
+        surfs_lh.append(mask_in_symsurf_lh)
+
+        # surf文件转化为label
+        label_in_symsurf_lh = os.path.join(patient_dir, 'surf/mask_in_symsurf_lrholh.label')
+        subprocess.run('mri_cor2label --i {} --id {} --l {} --surf {} {} --remove-holes-islands'.format(
+            mask_in_symsurf_lh,
+            '1',
+            label_in_symsurf_lh,
+            os.path.basename(paths.sym_sub),
+            'lh'), shell=True)
+        labels_lh.append(label_in_symsurf_lh)
+        
+    return surfs_lh, labels_lh
