@@ -4,6 +4,7 @@ import h5py
 import n_tools as nt
 import nibabel as nib
 import nibabel.freesurfer.io as fsio
+import go_path as paths
 
 def load_h5py_file(file_path):
     """
@@ -18,7 +19,7 @@ def load_h5py_file(file_path):
         data = {key: f[key][()] for key in f.keys()}
     return data
 
-def make_lesion_vol_h5py(mask_list, ref_orig ,h5py_file):
+def make_lesion_vol_h5py(patient_list, ref_orig ,h5py_file):
     """
     """
     mask_array = []
@@ -26,19 +27,20 @@ def make_lesion_vol_h5py(mask_list, ref_orig ,h5py_file):
     falied_list = []
     orig_data = nib.load(ref_orig).get_fdata()
     image_sahpe = orig_data.shape
-    for mask in mask_list:
+    for patient in patient_list:
+        mask = os.path.join(paths.SUBJECTS_DIR, patient, 'mask_warped_cvs152.nii.gz')
         if nt.is_valid_vol(mask):
             mask_data = nib.load(mask).get_fdata().astype(bool)
             if mask_data.shape == image_sahpe:
                 mask_data_flatten = mask_data.flatten()
                 mask_array.append(mask_data_flatten)
-                patients_list_valid.append(mask)
+                patients_list_valid.append(patient)
             else:
-                print(f'维度不匹配：{mask}')
-                falied_list.append(mask)
+                print(f'维度不匹配：{patient}')
+                falied_list.append(patient)
         else:
-            print(f"文件不存在或无法打开: {mask}")
-            falied_list.append(mask)
+            print(f"文件不存在或无法打开: {patient}")
+            falied_list.append(patient)
     print(f"体素数：{image_sahpe}")
     print(f"有效的mask文件数量: {len(patients_list_valid)}")
     print(f"无效的mask文件数量: {len(falied_list)}")
@@ -51,7 +53,7 @@ def make_lesion_vol_h5py(mask_list, ref_orig ,h5py_file):
         f.create_dataset('patients_list', data=np.array(patients_list_valid, dtype='S'))
         print(f'文件保存于：{h5py_file}')
 
-def make_lesion_surf_h5py(lesions_list, ref_white ,h5py_file):
+def make_lesion_surf_h5py(patient_list, ref_white ,h5py_file):
     """
     将surf_overlay的label文件转换为h5py格式
     ----------
@@ -66,16 +68,17 @@ def make_lesion_surf_h5py(lesions_list, ref_white ,h5py_file):
     falied_list = []
     vertices, faces = nib.freesurfer.read_geometry(ref_white)
     vert_num = len(vertices)
-    for lesion in lesions_list:
+    for patient in patient_list:
+        lesion = os.path.join(paths.SUBJECTS_DIR, patient,'surf/mask_in_symsurf_lrholh.label')
         if nt.is_valid_label(lesion):
             label_index = fsio.read_label(lesion, read_scalars=False)
             label_array = np.zeros(vert_num)
             label_array[label_index] = 1
             lesions_array.append(label_array)
-            patients_list_valid.append(lesion)
+            patients_list_valid.append(patient)
         else:
-            print(f"文件不存在或无法打开: {lesion}")
-            falied_list.append(lesion)
+            print(f"文件不存在或无法打开: {patient}")
+            falied_list.append(patient)
     print(f"面积节点数：{vert_num}")
     print(f"有效的label文件数量: {len(patients_list_valid)}")
     print(f"无效的label文件数量: {len(falied_list)}")
