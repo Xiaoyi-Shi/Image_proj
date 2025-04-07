@@ -6,7 +6,7 @@ import n_tools as nt
 import pre_datas
 import importlib
 import h5pyio
-importlib.reload(h5pyio)
+importlib.reload(paths)
 # 复制mask_warped.nii.gz到指定目录并筛选相应的患者信息表
 if not os.path.exists(paths.patient_info_path):
     patient_info = pre_datas.copy_mask_to_subjects_dir(paths.images_dir, paths.excel_info_path)
@@ -43,8 +43,10 @@ label_surfs_table = pd.DataFrame([annot_area] + label_surfs)
 label_surfs_table.to_csv(paths.label_surfs_table_path, index=False)
 
 # 将mask转换为h5py格式
-h5pyio.make_lesion_vol_h5py(patient_list, os.path.join(paths.sym_sub, 'mri/orig.mgz'), os.path.join(paths.SUBJECTS_DIR, 'lesion_vol_symsurf.h5py'))
-h5pyio.make_lesion_surf_h5py(patient_list, os.path.join(paths.sym_sub, 'surf/lh.white'), os.path.join(paths.SUBJECTS_DIR, 'lesion_surf_symsurf.h5py'))
+h5pyio.make_lesion_vol_h5py(patient_list, os.path.join(paths.sym_sub, 'mri/orig.mgz'), os.path.join(paths.states_results_dir, 'lesion_vol_symsurf.h5py'))
+h5pyio.make_lesion_surf_h5py(patient_list, os.path.join(paths.sym_sub, 'surf/lh.white'), os.path.join(paths.states_results_dir, 'lesion_surf_symsurf.h5py'))
+
+
 # 读取h5py文件
 h5py_file = os.path.join(paths.SUBJECTS_DIR, 'lesion_surf_symsurf.h5py')
 lesion_surf_symsurf= h5pyio.load_h5py_file(h5py_file)
