@@ -28,7 +28,7 @@ def make_lesion_vol_h5py(patient_list, ref_orig ,h5py_file):
     orig_data = nib.load(ref_orig).get_fdata()
     image_sahpe = orig_data.shape
     for patient in patient_list:
-        mask = os.path.join(paths.SUBJECTS_DIR, patient, 'mask_warped_cvs152.nii.gz')
+        mask = os.path.join(paths.SUBJECTS_DIR, patient, 'seg_mask_cvs152.nii.gz')
         if nt.is_valid_vol(mask):
             mask_data = nib.load(mask).get_fdata().astype(bool)
             if mask_data.shape == image_sahpe:

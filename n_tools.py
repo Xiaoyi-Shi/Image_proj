@@ -106,7 +106,7 @@ def convert_mask_to_cvs152(mask_list, cvs152_orig):
     failed_list = []
     for mask in mask_list:
         if is_valid_vol(mask):
-            output_mask = os.path.join(os.path.dirname(mask), 'mask_warped_cvs152.nii.gz')
+            output_mask = os.path.join(os.path.dirname(mask), 'seg_mask_cvs152.nii.gz')
             try:
                 # 使用 mri_convert 将 mask 转换为 cvs152 空间
                 subprocess.run('mri_convert {} {} --like {} -rt nearest'.format(
@@ -281,17 +281,22 @@ def mask_vol2surf(mask_list):
         if not os.path.exists(surf_dir):
             os.makedirs(surf_dir)
             print(f"创建目录: {surf_dir}")
-        mask_in_surf = os.path.join(patient_dir, 'surf/mask_in_surf_'+lateral+'.mgh')
+        mask_in_surf = os.path.join(surf_dir, 'mask_in_surf_'+lateral+'.mgh')
 
-        subprocess.run('mri_vol2surf --mov {} --regheader {} --hemi {} --out {} --interp nearest'.format(
+        subprocess.run('mri_vol2surf --mov {} --regheader {} --hemi {} --out {} --interp nearest --fwhm 2 --surf-fwhm 2 --projdist-max -6 0 1'.format(
             mask, 
             os.path.basename(paths.temp_sub), 
             lateral, 
             mask_in_surf), shell=True)
+        
+        subprocess.run('mri_binarize --i {} --min 0.1 --o {}'.format(
+            mask_in_surf,
+            mask_in_surf
+        ), shell=True)
 
         # 进行对称化并将mask_in_surf转换为fsaverage_sym的lh
         if lateral == 'lh':
-            mask_in_symsurf_lh = os.path.join(patient_dir, 'surf/mask_in_symsurf_lolh.mgh')
+            mask_in_symsurf_lh = os.path.join(surf_dir, 'mask_in_symsurf_lolh.mgh')
             subprocess.run('mris_apply_reg --src {} --trg {} --streg {} {}'.format(
                 mask_in_surf,
                 mask_in_symsurf_lh,
@@ -299,7 +304,7 @@ def mask_vol2surf(mask_list):
                 os.path.join(paths.sym_sub, 'surf/lh.sphere.reg')
             ), shell=True)
         if lateral == 'rh':
-            mask_in_symsurf_lh = os.path.join(patient_dir, 'surf/mask_in_symsurf_rolh.mgh')
+            mask_in_symsurf_lh = os.path.join(surf_dir, 'mask_in_symsurf_rolh.mgh')
             subprocess.run('mris_apply_reg --src {} --trg {} --streg {} {}'.format(
                 mask_in_surf,
                 mask_in_symsurf_lh,
@@ -309,7 +314,7 @@ def mask_vol2surf(mask_list):
         surfs_lh.append(mask_in_symsurf_lh)
 
         # surf文件转化为label
-        label_in_symsurf_lh = os.path.join(patient_dir, 'surf/mask_in_symsurf_lrholh.label')
+        label_in_symsurf_lh = os.path.join(surf_dir, 'mask_in_symsurf_lrholh.label')
         subprocess.run('mri_cor2label --i {} --id {} --l {} --surf {} {} --remove-holes-islands'.format(
             mask_in_symsurf_lh,
             '1',
@@ -319,3 +324,33 @@ def mask_vol2surf(mask_list):
         labels_lh.append(label_in_symsurf_lh)
         
     return surfs_lh, labels_lh
+
+if __name__ == '__main__':
+    subprocess.run('mri_convert {} {} --like {} -rt nearest'.format(
+                    os.path.join(paths.SUBJECTS_DIR,'a814333_liupeijun/seg_mask.nii.gz'),
+                    os.path.join(paths.SUBJECTS_DIR,'a814333_liupeijun/seg_mask_cvs152.nii.gz'),
+                    os.path.join(paths.temp_sub,'mri/orig.mgz')), shell=True)
+    subprocess.run('mri_vol2surf --mov {} --regheader {} --hemi {} --out {} --interp nearest --fwhm 2 --surf-fwhm 2 --projdist-max -4 0 1'.format(
+            os.path.join(paths.SUBJECTS_DIR,'20190301000994/20190301000994_seg_mask_cvs.nii.gz'), 
+            os.path.basename(paths.temp_sub), 
+            'rh', 
+            os.path.join(paths.SUBJECTS_DIR,'20190301000994/surf/test.mgh')), shell=True)
+    
+    maskfile = nib.load(os.path.join(paths.SUBJECTS_DIR,'a810379_zhaoli/a810379_zhaoli_seg_mask.nii.gz.seg.nrrd'))
+    maskdata = maskfile.get_fdata()
+    #maskdata = maskdata.astype(np.bool).astype(np.double)
+    header = maskfile.header
+    #header['datatype'] = 2
+    header['scl_slope'] = 1.0
+    header['scl_inter'] = 0.0
+    fixed_file = os.path.join(paths.SUBJECTS_DIR,'20190301000994/20190301000994_seg_mask_fixed.nii.gz')
+    new_img = nib.Nifti1Image(maskdata, maskfile.affine, header)
+    nib.save(new_img, fixed_file)
+
+    #如果没生成正确的Label, 单个患者调试执行以下
+    #1.cp 修好的seg_mask.nii.gz到对应的患者目录下并删除surf目录下的所有文件
+    subprocess.run('mri_convert {} {} --like {} -rt nearest'.format(
+                    os.path.join(paths.SUBJECTS_DIR,'xxx/seg_mask.nii.gz'),
+                    os.path.join(paths.SUBJECTS_DIR,'xxx/seg_mask_cvs152.nii.gz'),
+                    os.path.join(paths.temp_sub,'mri/orig.mgz')), shell=True)
+    mask_vol2surf([os.path.join(paths.SUBJECTS_DIR,'xxx/seg_mask_cvs152.nii.gz')])
