@@ -69,6 +69,7 @@ def make_lesion_surf_h5py(patient_list, ref_white ,h5py_file):
     vertices, faces = nib.freesurfer.read_geometry(ref_white)
     vert_num = len(vertices)
     for patient in patient_list:
+        #lesion = os.path.join(paths.SUBJECTS_DIR, patient,'surf/mask_in_symsurf_lrholh.label') #调试
         lesion = os.path.join(paths.SUBJECTS_DIR, patient,'surf/mask_in_symsurf_lrholh.label')
         if nt.is_valid_label(lesion):
             label_index = fsio.read_label(lesion, read_scalars=False)
@@ -94,20 +95,9 @@ def make_lesion_surf_h5py(patient_list, ref_white ,h5py_file):
         print(f'文件保存于：{h5py_file}')
 
 if __name__ == "__main__":
-    # 示例用法
-    lesions_list = ['/root/subjects/test/surf/mask_in_symsurf_lrholh.label','/root/subjects/test/surf/mask_in_symsurf_lrholh.label']
-    ref_white = '/root/subjects/fsaverage_sym/surf/lh.white'
-    h5py_file = 'mask_in_symsurf_lrholh.h5py'
-    make_lesion_surf_h5py(lesions_list, ref_white, h5py_file)
-
-    # 读取h5py文件
-    data = load_h5py_file(h5py_file)
-
-    ###
-    mask_list = ['/root/subjects/test/mask_warped_converted.nii.gz','/root/subjects/test/mask_warped_converted.nii.gz']
-    ref_orig = '/root/subjects/cvs_MNI152/mri/orig.mgz'
-    h5py_file = 'mask_in_orig.h5py'
-    make_lesion_vol_h5py(mask_list, ref_orig, h5py_file)
-
-    data = load_h5py_file(h5py_file)
-    data['lesions']
+    # 测试读取h5py文件
+    h5py_file = os.path.join(paths.SUBJECTS_DIR, 'lesion_surf_symsurf.h5py')
+    lesion_surf_symsurf= load_h5py_file(h5py_file)
+    print(lesion_surf_symsurf.keys())
+    print(lesion_surf_symsurf['lesions'].shape)
+    print(lesion_surf_symsurf['patients_list'])

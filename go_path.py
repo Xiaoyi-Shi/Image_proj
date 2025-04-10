@@ -9,7 +9,7 @@ os.environ['SUBJECTS_DIR'] = SUBJECTS_DIR
 temp_sub = os.path.join(SUBJECTS_DIR, 'cvs_MNI152')
 sym_sub = os.path.join(SUBJECTS_DIR, 'fsaverage_sym')
 # 设置数据目录
-images_dir = '/mnt/f/Temp/DeepBraTumIA'
+images_dir = '/mnt/h/sjw/sMRI_eeg/segmentions/clean_cerebellum'
 excel_info_path = '/mnt/h/sjw/sMRI_eeg/patientANDfile_info.xlsx'
 
 # 设置输出目录

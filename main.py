@@ -6,7 +6,7 @@ import n_tools as nt
 import pre_datas
 import importlib
 import h5pyio
-importlib.reload(h5pyio)
+importlib.reload(pre_datas)
 # 复制mask_warped.nii.gz到指定目录并筛选相应的患者信息表
 if not os.path.exists(paths.patient_info_path):
     patient_info = pre_datas.copy_mask_to_subjects_dir(paths.images_dir, paths.excel_info_path)
@@ -31,8 +31,13 @@ mask_vols, aseg_vols = nt.calc_maskin_aseg(mask_cvs152_list, aseg_file, lookup_t
 mask_vols_table = pd.DataFrame([aseg_vols] + mask_vols)
 mask_vols_table.to_csv(paths.mask_vols_table_path, index=False)
 
+# 和临床信息合并
+mask_vols_table['检查流水号'] = mask_vols_table['patient'].str.split('/',expand=True)[3]
+merge_1 = pd.merge(mask_vols_table, patient_info, how='left', on='检查流水号')
+merge_1.to_excel(os.path.join(paths.states_results_dir, 'mask_vols_clin_table.xlsx'), index=False)
+
 # 批量提取所有患者mask在皮质表面的体积并转换到fsaverage_sym的左脑表面
-#mask_cvs152_list = [os.path.join(paths.SUBJECTS_DIR,i,'mask_warped_cvs152.nii.gz') for i in patient_list]
+#mask_cvs152_list = [os.path.join(paths.SUBJECTS_DIR,i,'seg_mask_cvs152.nii.gz') for i in patient_list]
 surfs_lh, labels_lh = nt.mask_vol2surf(mask_cvs152_list)
 
 # 批量提取所有患者label面积
@@ -45,7 +50,7 @@ label_surfs_table.to_csv(paths.label_surfs_table_path, index=False)
 
 # 将mask转换为h5py格式
 h5pyio.make_lesion_vol_h5py(patient_list, os.path.join(paths.sym_sub, 'mri/orig.mgz'), os.path.join(paths.states_results_dir, 'lesion_vol_symsurf.h5py'))
-h5pyio.make_lesion_surf_h5py(patient_list, os.path.join(paths.sym_sub, 'surf/lh.white'), os.path.join(paths.states_results_dir, 'lesion_surf_symsurf.h5py'))
+h5pyio.make_lesion_surf_h5py(patient_list, os.path.join(paths.sym_sub, 'surf/lh.white'), os.path.join(paths.states_results_dir, 'lesion_surf_2_symsurf.h5py'))
 
 
 # 读取h5py文件

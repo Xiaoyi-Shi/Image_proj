@@ -12,7 +12,7 @@ def copy_mask_to_subjects_dir(images_dir, excel_info_path):
     将mask_warped.nii.gz文件复制到指定的subjects目录下,并筛选相应的患者信息表
     ---------
     - images_dir: str
-        原始数据目录，包含患者文件夹
+        原始数据目录，包含患者mask的文件夹
     - excel_info_path: str
         患者信息表路径，包含患者的MR文件名
     ---------
@@ -28,23 +28,22 @@ def copy_mask_to_subjects_dir(images_dir, excel_info_path):
     patient_list_excel = excel_info['检查流水号'].tolist()
     patient_list_real = []
     for i in os.scandir(images_dir):
-        if i.is_dir() and i.name in patient_list_excel:
-            segmentation = os.path.join(i.path,'atlas/segmentation',i.name+'_seg_mask.nii.gz')
-            images_dir = os.path.join(i.path,'atlas/registration')
-            if os.path.exists(segmentation):
-                if not os.path.exists(os.path.join(paths.SUBJECTS_DIR, i.name)):
-                        os.makedirs(os.path.join(paths.SUBJECTS_DIR, i.name))
-                maskfile = nib.load(segmentation)
-                maskdata = maskfile.get_fdata()
-                #maskdata = maskdata.astype(np.bool).astype(np.double)
-                header = maskfile.header
-                header['scl_slope'] = 1.0
-                header['scl_inter'] = 0.0
-                fixed_file = os.path.join(paths.SUBJECTS_DIR, i.name, 'seg_mask.nii.gz')
-                new_img = nib.Nifti1Image(maskdata, maskfile.affine, header)
-                nib.save(new_img, fixed_file)
-                #os.system(f'cp -f {segmentation} {os.path.join(paths.SUBJECTS_DIR, i.name, 'seg_mask.nii.gz')}')
-                patient_list_real.append(i.name)
+        IDs = i.name.split("_seg_mask")[0]
+        if i.name.endswith(".nii.gz")  and IDs in patient_list_excel:
+            segmentation = i.path
+            #images_dir = os.path.join(i.path,'atlas/registration')
+            if not os.path.exists(os.path.join(paths.SUBJECTS_DIR, IDs)):
+                os.makedirs(os.path.join(paths.SUBJECTS_DIR, IDs))
+            mask = nib.load(segmentation)
+            mask_data = mask.get_fdata().astype(np.float32)
+            header = mask.header
+            header['scl_slope'] = 1.0
+            header['scl_inter'] = 0.0
+            fixed_file = os.path.join(paths.SUBJECTS_DIR, IDs, 'seg_mask.nii.gz')
+            new_img = nib.Nifti1Image(mask_data, mask.affine, header)
+            nib.save(new_img, fixed_file)
+            #os.system(f"cp -f {segmentation} {os.path.join(paths.SUBJECTS_DIR, IDs, 'seg_mask.nii.gz')}")
+            patient_list_real.append(IDs)
     patient_info_real = excel_info[excel_info['检查流水号'].isin(patient_list_real)]
 
     patient_info_real.to_csv(paths.patient_info_path, index=False)
@@ -111,76 +110,4 @@ def lesion_relative_clinvariable(lesions_array, clin_data, feature_names, lesion
     return None
 
 if __name__ == '__main__':
-
-    import nilearn.plotting as nip
-    import nilearn.surface as nis
-    import h5pyio
-
-    h5py_file = os.path.join(paths.states_results_dir, 'lesion_surf_symsurf.h5py')
-    lesion_surf_symsurf= h5pyio.load_h5py_file(h5py_file)
-    lesions_array = lesion_surf_symsurf['lesions']
-    clin_data = pd.read_csv(paths.patient_info_path, dtype='str')
-    clin_data.columns
-    feature_names = ['年龄','术后癫痫']
-    feature_name = '术后癫痫'
-
-    mesh = nis.PolyMesh(
-        left = nis.load_surf_mesh(os.path.join(paths.sym_sub,'surf/lh.pial')),
-    )
-    data = nis.PolyData(left= mask_means)
-    new_mesh = nis.SurfaceImage(mesh=mesh, data=data)
-    #lesionss = np.sum(lesions_array, axis=0, keepdims=True)
-    data = nis.PolyData( left= lesionss.reshape(-1,))
-    new_mesh = nis.SurfaceImage(mesh=mesh, data=data)
-    fig = nip.view_surf(surf_map = new_mesh,hemi='left',
-                            colorbar=True,
-                            threshold=0,
-                            symmetric_cmap = False,
-                            cmap='jet',
-                            bg_map=os.path.join(paths.sym_sub,'surf/lh.sulc'))
-    fig.open_in_browser()
-
-    #从vol重建surf
-    h5py_file = os.path.join(paths.states_results_dir, 'lesion_vol_symsurf.h5py')
-    lesion_surf_symsurf= h5pyio.load_h5py_file(h5py_file)
-    lesions_array = lesion_surf_symsurf['lesions']
-    lesions_sum = np.sum(lesions_array, axis=0, keepdims=True)
-    lesions_sum = lesions_sum.reshape(256,256,256)
-    template_nii = nib.load(os.path.join(paths.temp_sub, 'mri/orig.mgz'))
-    output_mask_res = nib.Nifti1Image(lesions_sum,
-                                affine = template_nii.affine,
-                                header = template_nii.header
-                                )
-    surf_mesh = nis.PolyMesh(
-        left = nis.load_surf_mesh(os.path.join(paths.temp_sub,'surf/lh.pial')),
-        right = nis.load_surf_mesh(os.path.join(paths.temp_sub,'surf/rh.pial'))
-    )
-    inner_mesh = nis.PolyMesh(
-        left = nis.load_surf_mesh(os.path.join(paths.temp_sub,'surf/lh.white')),
-        right = nis.load_surf_mesh(os.path.join(paths.temp_sub,'surf/rh.white'))
-    )
-    vol_in_surf_l = nis.vol_to_surf(output_mask_res, surf_mesh = os.path.join(paths.temp_sub,'surf/lh.pial'),
-                                  inner_mesh = os.path.join(paths.temp_sub,'surf/lh.white'),
-                                  radius = 1,
-                                  interpolation = 'linear',
-                                  kind = 'depth',
-                                  depth = [10,5])
-    vol_in_surf_r = nis.vol_to_surf(output_mask_res, surf_mesh = os.path.join(paths.temp_sub,'surf/rh.pial'),
-                                  inner_mesh = os.path.join(paths.temp_sub,'surf/rh.white'),
-                                  radius = 1,
-                                  interpolation = 'linear',
-                                  kind = 'depth',
-                                  depth = [10,5])
-    
-    data = nis.PolyData( left= vol_in_surf_l, right = vol_in_surf_r)
-    new_mesh = nis.SurfaceImage(mesh=inner_mesh, data=data)
-    fig = nip.view_surf(surf_map = new_mesh,hemi = 'right',
-                            colorbar=True,
-                            threshold=0,
-                            symmetric_cmap = False,
-                            cmap='jet',
-                            #bg_map=os.path.join(paths.temp_sub,'surf/rh.sulc')
-                        )
-    fig.open_in_browser()
-
-    
+    print("test")

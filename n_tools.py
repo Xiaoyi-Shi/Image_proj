@@ -277,13 +277,15 @@ def mask_vol2surf(mask_list):
     for mask in mask_list:
         patient_dir = os.path.dirname(mask)
         lateral = determine_mask_side(mask)
+        #surf_dir = os.path.join(patient_dir, 'surf') #调试
         surf_dir = os.path.join(patient_dir, 'surf')
         if not os.path.exists(surf_dir):
             os.makedirs(surf_dir)
             print(f"创建目录: {surf_dir}")
         mask_in_surf = os.path.join(surf_dir, 'mask_in_surf_'+lateral+'.mgh')
 
-        subprocess.run('mri_vol2surf --mov {} --regheader {} --hemi {} --out {} --interp nearest --fwhm 2 --surf-fwhm 2 --projdist-max -6 0 1'.format(
+        #subprocess.run('mri_vol2surf --mov {} --regheader {} --hemi {} --out {} --interp nearest --fwhm 2 --surf-fwhm 2 --projdist-max -6 0 1'.format( #调试
+        subprocess.run('mri_vol2surf --mov {} --regheader {} --hemi {} --out {} --interp nearest --surf-fwhm 1 --projdist-max -2 0 1'.format(
             mask, 
             os.path.basename(paths.temp_sub), 
             lateral, 
@@ -325,32 +327,55 @@ def mask_vol2surf(mask_list):
         
     return surfs_lh, labels_lh
 
+def drop_wrong_cerebellum_mask(turmor_mask_path_list, cerebellum_mask_path, output_dir, del_seg_val:list = None):
+    """
+    将小脑的杂乱mask去除
+    ----------
+    - turmor_mask_path_list: list of str, 肿瘤mask文件路径列表
+    - cerebellum_mask_path: str, 小脑mask文件路径
+    - output_dir: str, 输出目录路径
+    - del_seg_val: list of int, 要删除的肿瘤mask值列表
+    ----------
+    """
+    cerebellum_mask = nib.load(cerebellum_mask_path)
+    cerebellum_mask_data = cerebellum_mask.get_fdata()
+    for turmor_mask_path in turmor_mask_path_list:
+        turmor_mask = nib.load(turmor_mask_path)
+        turmor_mask_data = turmor_mask.get_fdata().astype(np.int8)
+        # 将小脑mask从肿瘤mask中去除
+        turmor_mask_data[cerebellum_mask_data > 0] = 0
+        # 将肿瘤mask中值为del_seg_val的部分设置为0
+        if del_seg_val is not None:
+            for i in del_seg_val:
+                turmor_mask_data[turmor_mask_data == i] = 0
+        header = turmor_mask.header
+        header['scl_slope'] = 1.0
+        header['scl_inter'] = 0.0
+        fixed_file = os.path.join(os.path.join(output_dir,os.path.basename(turmor_mask_path)))
+        new_img = nib.Nifti1Image(turmor_mask_data, turmor_mask.affine, header)
+        nib.save(new_img, fixed_file)
+    return 1
+
 if __name__ == '__main__':
-    subprocess.run('mri_convert {} {} --like {} -rt nearest'.format(
-                    os.path.join(paths.SUBJECTS_DIR,'a814333_liupeijun/seg_mask.nii.gz'),
-                    os.path.join(paths.SUBJECTS_DIR,'a814333_liupeijun/seg_mask_cvs152.nii.gz'),
-                    os.path.join(paths.temp_sub,'mri/orig.mgz')), shell=True)
-    subprocess.run('mri_vol2surf --mov {} --regheader {} --hemi {} --out {} --interp nearest --fwhm 2 --surf-fwhm 2 --projdist-max -4 0 1'.format(
-            os.path.join(paths.SUBJECTS_DIR,'20190301000994/20190301000994_seg_mask_cvs.nii.gz'), 
-            os.path.basename(paths.temp_sub), 
-            'rh', 
-            os.path.join(paths.SUBJECTS_DIR,'20190301000994/surf/test.mgh')), shell=True)
     
-    maskfile = nib.load(os.path.join(paths.SUBJECTS_DIR,'a810379_zhaoli/a810379_zhaoli_seg_mask.nii.gz.seg.nrrd'))
-    maskdata = maskfile.get_fdata()
-    #maskdata = maskdata.astype(np.bool).astype(np.double)
-    header = maskfile.header
-    #header['datatype'] = 2
-    header['scl_slope'] = 1.0
-    header['scl_inter'] = 0.0
-    fixed_file = os.path.join(paths.SUBJECTS_DIR,'20190301000994/20190301000994_seg_mask_fixed.nii.gz')
-    new_img = nib.Nifti1Image(maskdata, maskfile.affine, header)
-    nib.save(new_img, fixed_file)
+    #将小脑的杂乱mask去除
+    import os
+    import numpy as np
+    import nibabel as nib
+    main_dir = '/mnt/h/sjw/sMRI_eeg/segmentions'
+    segmentation_dir = os.path.join(main_dir, 'orig')
+    cerebellum_mask_path = os.path.join(main_dir,'cerebellum_mask.nii.gz')
+    output_dir = os.path.join(main_dir, 'clean_cerebellun_drop3')
+    turmor_mask_path_list = []
+    for i in os.scandir(segmentation_dir):
+        if i.name.endswith('mask.nii.gz'):
+            turmor_mask_path_list.append(i.path)
+    drop_wrong_cerebellum_mask(turmor_mask_path_list, cerebellum_mask_path, output_dir, del_seg_val=[3])
 
     #如果没生成正确的Label, 单个患者调试执行以下
     #1.cp 修好的seg_mask.nii.gz到对应的患者目录下并删除surf目录下的所有文件
     subprocess.run('mri_convert {} {} --like {} -rt nearest'.format(
-                    os.path.join(paths.SUBJECTS_DIR,'xxx/seg_mask.nii.gz'),
-                    os.path.join(paths.SUBJECTS_DIR,'xxx/seg_mask_cvs152.nii.gz'),
+                    os.path.join(paths.SUBJECTS_DIR,'20230823002547/seg_mask.nii.gz'),
+                    os.path.join(paths.SUBJECTS_DIR,'20230823002547/seg_mask_cvs152.nii.gz'),
                     os.path.join(paths.temp_sub,'mri/orig.mgz')), shell=True)
-    mask_vol2surf([os.path.join(paths.SUBJECTS_DIR,'xxx/seg_mask_cvs152.nii.gz')])
+    mask_vol2surf([os.path.join(paths.SUBJECTS_DIR,'20230823002547/seg_mask_cvs152.nii.gz')])
